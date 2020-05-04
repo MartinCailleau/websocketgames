@@ -1,0 +1,48 @@
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+<script>
+  $(function () {
+    var socket = io();
+    $('#spawn').submit(function(){
+		console.log('{pseudo:'+$('#pseudo').val()+'}');
+		var msg =  '{"pseudo":"'+$('#pseudo').val()+'"}';
+      socket.emit('spawn',JSON.parse(msg));
+      return false;
+    });
+	
+	$('#input1').submit(function(){
+		console.log("input A pressed");
+		var msg =  '{"pseudo":"'+$('#pseudo').val()+'"}';
+		socket.emit('input1', JSON.parse(msg));
+		return false;
+	});
+		
+	$('#input2').submit(function(){
+		console.log("input B pressed");
+		var msg =  '{"pseudo":"'+$('#pseudo').val()+'"}';
+		socket.emit('input2', JSON.parse(msg));
+		return false;
+	});
+	
+    socket.on('chat', function(data){
+      $('#messages').append($('<li>').text("user#" + data.id + ": " + data.msg));
+    });
+  });
+</script>
+<body>
+
+<form action="" id="spawn">
+  Pseudo: <input type="text" id="pseudo"><br>
+  <input type="submit" value="Spawn"/>
+</form>
+
+<form action="" id="input1">
+  <input type="submit" value="Dash"/>
+</form>
+
+<form action="" id="input2">
+  <input type="submit" value="Reverse"/>
+</form>
+
+</body>
