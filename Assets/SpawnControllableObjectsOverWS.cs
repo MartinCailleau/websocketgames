@@ -65,13 +65,15 @@ public class SpawnControllableObjectsOverWS : MonoBehaviour
                 
                 // Début de code pour générer une UI pour les scores.
                 // Attention - ce code n'est pas finalisé.
-                /*
+                
                 GameObject uiTmp = Instantiate(GameManager.instance.playerScorePrefab);
-                uiTmp.transform.parent = GameManager.instance.scoreCanvas.transform;
+                uiTmp.transform.SetParent(GameManager.instance.scoreCanvas.transform);
                 Debug.Log("nb players "+ GameManager.instance.spawnedObjects.Count);
-                uiTmp.transform.localPosition = new Vector3(tmp.transform.localPosition.x + (200*GameManager.instance.spawnedObjects.Count),-150,0);
+                uiTmp.GetComponent<RectTransform>().position = new Vector3((200*GameManager.instance.spawnedObjects.Count),1080-150,0);
                 uiTmp.transform.Find("Pseudo").GetComponent<UnityEngine.UI.Text>().text = tmp.name;
-                */
+                tmp.GetComponent<ControlOverWS>().scoreDisplay = uiTmp;
+                GameManager.instance.scoreList.Add(uiTmp.GetComponent<ScoreData>());
+
             }
             else// Si le joueur est déjà dans la liste, on ne l'instancie pas à nouveau.
             {

@@ -14,6 +14,7 @@ public class SpawnOverWebSocket : MonoBehaviour
     {
         io = SocketIOController.instance;
         io.On("connect", (SocketIOEvent e) => {
+            Debug.Log(e);
             Debug.Log("SocketIO connected");
         });
 
@@ -24,6 +25,11 @@ public class SpawnOverWebSocket : MonoBehaviour
             Instantiate(    objectToSpawn, 
                             new Vector3( Random.Range(-10, 10),Random.Range(-8, 8),0),
                             Quaternion.identity).gameObject.name = e.data;
+        });
+        
+        io.On("input1", (SocketIOEvent e) => {
+            Debug.Log(e.data);
+            
         });
     }
 

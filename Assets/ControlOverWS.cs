@@ -26,6 +26,7 @@ public class ControlOverWS : MonoBehaviour
     public int scoreIncr = 1;
     public float scoreTickDelay = 2;
     public float scoreTickTimer = 0;
+    public GameObject scoreDisplay;
     
     private System.Action<SocketIOEvent> input1Action,input2Action;
 
@@ -105,6 +106,8 @@ public class ControlOverWS : MonoBehaviour
     private void updateScore()
     {
         score += scoreIncr;
+        if(scoreDisplay)
+        scoreDisplay.GetComponent<ScoreData>().updateDisplay(score);
     }
     
     private void growUp()
@@ -127,5 +130,8 @@ public class ControlOverWS : MonoBehaviour
     {
         io.Off("input1", input1Action);
         io.Off("input2", input2Action);
+        Destroy(scoreDisplay);
+        GameManager.instance.scoreList.Remove(scoreDisplay.GetComponent<ScoreData>());
+
     }
 }
