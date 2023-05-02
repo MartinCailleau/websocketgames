@@ -10,6 +10,13 @@ app.get('/', function(req, res){
 	//
 });
 
+
+app.get('/jquery', function(req, res){
+	count++;
+	res.sendFile(__dirname + '/jquery-3.6.4.min.js');
+	//
+});
+
 var userId = 0;
 
 io.on('connection', function(socket){
