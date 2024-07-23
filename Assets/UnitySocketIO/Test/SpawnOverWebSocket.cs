@@ -14,6 +14,7 @@ public class SpawnOverWebSocket : MonoBehaviour
     {
         io = SocketIOController.instance;
         io.On("connect", (SocketIOEvent e) => {
+            Debug.Log(e);
             Debug.Log("SocketIO connected");
         });
 
