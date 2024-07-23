@@ -26,6 +26,11 @@ public class SpawnOverWebSocket : MonoBehaviour
                             new Vector3( Random.Range(-10, 10),Random.Range(-8, 8),0),
                             Quaternion.identity).gameObject.name = e.data;
         });
+        
+        io.On("input1", (SocketIOEvent e) => {
+            Debug.Log(e.data);
+            
+        });
     }
 
     // Update is called once per frame
