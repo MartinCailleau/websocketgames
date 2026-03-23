@@ -1,155 +1,143 @@
-# 🎮 Mini-jeu multijoueur – p5play + WebSocket
+# Mini-jeu multijoueur - p5play + WebSocket
 
-Exemple pédagogique d'un jeu multijoueur en temps réel.  
-Chaque joueur contrôle une balle depuis son téléphone, la balle est simulée physiquement sur un écran central.
+Exemple pedagogique d'un jeu multijoueur en temps reel.
+Chaque joueur controle une balle depuis son telephone, la simulation physique se fait sur l'ecran principal.
 
 ---
 
-## 📂 Structure du projet
+## Structure du projet
 
 ```
 p5play_brawler_example/
-├── server.js          ← Serveur Node.js (HTTP + WebSocket)
-├── package.json       ← Dépendances npm
-├── lancer-le-serveur.bat  ← Lancement sous Windows
-└── public/
-    ├── game.html      ← Jeu affiché sur le grand écran
-    └── controller.html ← Manette sur téléphone
+|- server.js                 Serveur Node.js (HTTP + WebSocket)
+|- package.json              Dependances npm
+|- lancer-le-serveur.bat     Lancement rapide sous Windows
+`- public/
+   |- game.html              Page grand ecran
+   |- game.css               Styles de la page jeu
+   |- game.js                Logique de jeu + physique p5play
+   |- controller.html        Page manette (telephone)
+   |- controller.css         Styles de la manette
+   `- controller.js          Logique manette + WebSocket
 ```
 
 ---
 
-## 🚀 Lancer le projet
+## Lancer le projet
 
-### Prérequis
-- [Node.js](https://nodejs.org/) installé (v16 ou plus récent)
+Prerequis:
+- Node.js installe (v16+ recommande)
 
-### Étapes
-1. Ouvrir un terminal dans ce dossier
-2. Installer les dépendances (une seule fois) :
-   ```bash
-   npm install
-   ```
-3. Démarrer le serveur :
-   ```bash
-   node server.js
-   ```
-4. Ouvrir **game.html** sur le grand écran :  
-   → http://localhost:3000/
-5. Ouvrir **controller.html** sur chaque téléphone :  
-   → http://[IP-de-votre-machine]:3000/controller
+Etapes:
+1. Ouvrir un terminal dans ce dossier.
+2. Installer les dependances (une seule fois):
 
-> 💡 Sous Windows : double-cliquer sur `lancer-le-serveur.bat`
+```bash
+npm install
+```
+
+3. Demarrer le serveur:
+
+```bash
+node server.js
+```
+
+4. Ouvrir le jeu sur l'ecran principal:
+- http://localhost:3000/
+
+5. Ouvrir la manette sur chaque telephone:
+- http://[IP-de-votre-machine]:3000/controller
+
+Sous Windows, vous pouvez aussi lancer `lancer-le-serveur.bat`.
 
 ---
 
-## 🏗️ Architecture générale
+## Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   SERVEUR Node.js                   │
-│   Express (HTTP) + WebSocket (ws)                   │
-│                                                     │
-│   - Sert les fichiers HTML                          │
-│   - Relaie les messages entre les clients           │
-└────────────┬───────────────────────┬────────────────┘
-             │                       │
-             ▼                       ▼
-   ┌─────────────────┐     ┌──────────────────────┐
-   │   game.html     │     │  controller.html      │
-   │  (grand écran)  │     │  (téléphone joueur)   │
-   │                 │     │                        │
-   │  p5play         │     │  Boutons :             │
-   │  - physique     │     │  Spawn / Dash /        │
-   │  - rendu 2D     │     │  Reverse               │
-   └─────────────────┘     └──────────────────────┘
-```
+- `server.js` sert les fichiers statiques et relaie les messages WebSocket entre clients.
+- `public/game.js` contient toute la logique de jeu (spawn, dash, score, mort, respawn).
+- `public/controller.js` envoie les commandes joueur et reagit aux notifications de mort.
 
-**Flux d'un message** (exemple : joueur appuie sur DASH) :
-```
-Téléphone                Serveur                Grand écran
-    │── { type:'input1',    ──▶│                        │
-    │    pseudo:'Alice' }      │── (broadcast) ────────▶│
-    │                          │              reçoit message
-    │                          │              → dashPlayer('Alice')
-```
+Le serveur est volontairement un relay simple:
+- il ne calcule pas les regles du jeu,
+- il diffuse juste les messages recus aux autres clients connectes.
 
 ---
 
-## 📡 Protocole WebSocket – Messages échangés
+## Protocole WebSocket
 
-Tous les messages sont au format **JSON** :
+Tous les messages sont en JSON.
 
-| Message | Envoyé par | Champs | Effet sur le jeu |
-|---------|------------|--------|-----------------|
-| `spawn` | Controller | `{ type, pseudo }` | Crée une balle pour ce joueur |
-| `input1` | Controller | `{ type, pseudo }` | Dash (impulsion dans la direction du marqueur) |
-| `input2` | Controller | `{ type, pseudo }` | Inverse la rotation du marqueur |
-
----
-
-## 🎮 Mécaniques de jeu
-
-### La balle
-- Sphère avec physique réaliste (gravité, rebond, friction)
-- Créée par p5play, simulée par le moteur physique **planck.js** (port JavaScript de Box2D)
-
-### Le marqueur directionnel
-- Flèche qui tourne en permanence autour de la balle
-- Indique la direction du prochain dash
-- Grandit progressivement si le joueur est inactif (avertissement visuel)
-
-### Actions
-- **DASH** : Propulse la balle dans la direction du marqueur
-- **REVERSE** : Inverse le sens de rotation du marqueur (pour changer de direction)
-
-### Score
-- +1 point toutes les 2 secondes de survie
-- Si la balle tombe dans la zone rouge → destruction du joueur
+| Message | Envoye par | Champs | Effet |
+|---|---|---|---|
+| `spawn` | Controller | `{ type, pseudo }` | Cree le joueur si absent |
+| `input1` | Controller | `{ type, pseudo }` | Dash |
+| `input2` | Controller | `{ type, pseudo }` | Inverse le sens de rotation de la fleche |
+| `respawn` | Controller | `{ type, pseudo }` | Redemande une apparition apres mort |
+| `playerDead` | Game | `{ type, pseudo }` | Informe la manette que ce joueur est mort |
 
 ---
 
-## 📚 Concepts techniques illustrés
+## Mecaniques de jeu
 
-### 1. WebSocket vs HTTP
-- **HTTP** : le client demande → le serveur répond → connexion fermée
-- **WebSocket** : connexion persistante bidirectionnelle → le serveur peut envoyer des données à tout moment
+### Joueur
+- Chaque joueur est une sphere dynamique (gravite, collisions, rebond, friction).
+- Le score augmente de +1 toutes les 2 secondes de survie.
 
-### 2. Architecture "relay server"
-- Le serveur ne connaît pas les règles du jeu
-- Il reçoit un message → le redirige vers tous les autres clients
-- La logique du jeu est entièrement dans `game.html`
+### Fleche directionnelle physique
+- La fleche n'est pas juste un dessin: c'est aussi un objet physique dynamique.
+- Elle orbite autour du joueur via un suivi de type ressort amorti (plus stable).
+- Elle peut pousser, bousculer et soulever les joueurs par collision.
+- En inactivite, elle grandit progressivement (jusqu'a `MARKER_MAX_LENGTH`).
+- Des qu'un joueur rejoue (dash/reverse), sa fleche revient a la taille normale.
 
-### 3. p5play et la physique
-- `new Sprite(x, y, taille, 'dynamic')` → crée un objet physique
-- `world.gravity.y = 10` → gravité vers le bas
-- `sprite.vel.x += force` → impulsion (dash)
-- `sprite.bounciness = 0.6` → coefficient de rebond
+### Dash / Reverse / Respawn
+- `DASH` applique une impulsion dans la direction de la fleche.
+- `REVERSE` inverse le sens de rotation de la fleche.
+- Quand un joueur meurt (chute dans la zone rouge), la manette affiche un bouton `RESPAWN`.
+- Le bouton envoie `respawn`, ce qui recree le joueur s'il est absent.
 
-### 4. La boucle de rendu
-```
-setup()  → exécuté une seule fois au démarrage
-draw()   → exécuté en boucle (~60 fois/seconde)
-```
+### Limitation de vitesse
+- Une limite de vitesse du joueur est appliquee (`PLAYER_MAX_SPEED`) pour eviter les ejections extremes.
 
----
-
-## 🧩 Pour aller plus loin
-
-- **Ajouter une collision entre joueurs** : détecter `sprite.overlaps(autreSprite)`
-- **Ajouter un chat** : envoyer `{ type: 'chat', pseudo, message }` et l'afficher
-- **Déployer en ligne** : utiliser [Railway](https://railway.app) ou [Render](https://render.com)
-- **Ajouter des power-ups** : sprites statiques que l'on peut toucher
-- **Changer la gravité** : `world.gravity.y = -5` pour une gravité inverse
+### Arene et rebords
+- Plateforme centrale + murs + plafond + zone de destruction en bas.
+- Rebords gauche/droite ajoutes sur l'arene.
+- Hauteur des rebords = 1/10 de la largeur de l'arene.
 
 ---
 
-## 🛠️ Dépendances
+## Parametres importants (dans game.js)
 
-| Package | Rôle |
-|---------|------|
-| `express` | Serveur HTTP pour servir les fichiers HTML |
-| `ws` | Protocole WebSocket côté serveur |
-| `p5.js` (CDN) | Dessin 2D et boucle de jeu |
-| `planck.js` (CDN) | Moteur physique (Box2D) |
-| `p5play` (CDN) | Surcouche de p5.js pour la physique et les sprites |
+- `GRAVITY`
+- `DASH_POWER`
+- `PLAYER_MAX_SPEED`
+- `MARKER_FOLLOW_STIFFNESS`
+- `MARKER_FOLLOW_DAMPING`
+- `INACTIF_DELAY`
+- `MARKER_INIT_LENGTH`
+- `MARKER_MAX_LENGTH`
+- `ARENA_WIDTH_RATIO`
+- `REBORD_HEIGHT_RATIO`
+
+---
+
+## Concepts pedagogiques couverts
+
+- Separation claire HTML / CSS / JS.
+- Communication temps reel avec WebSocket.
+- Architecture relay serveur simple et lisible.
+- Simulation physique 2D avec p5play/planck.
+- Synchronisation d'etat entre vue jeu et vue manette.
+
+---
+
+## Dependances
+
+| Package | Role |
+|---|---|
+| `express` | Serveur HTTP |
+| `ws` | Serveur WebSocket |
+| `p5.js` (CDN) | Rendu 2D + boucle de jeu |
+| `planck.js` (CDN) | Moteur physique |
+| `p5play` (CDN) | Sprites + integration physique |
