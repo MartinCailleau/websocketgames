@@ -21,14 +21,22 @@ window._p5play_intro_image = '';
 // Toutes les valeurs configurables sont regroupées ici pour être faciles à modifier.
 
 const GRAVITY = 10; // Force de gravité (unités p5play par seconde²)
-const MARKER_DISTANCE = 35; // Distance du marqueur au centre de la balle (px)
+const PLAYER_RADIUS = 15;
 const MARKER_ROTATION_SPEED = 2; // Vitesse de rotation du marqueur (radians/seconde)
-const DASH_POWER = 6; // Force du dash (pixels/seconde ajoutés à la vitesse)
+const DASH_POWER = 9; // Force du dash (pixels/seconde ajoutés à la vitesse)
 const SCORE_TICK_DELAY = 2000; // Délai entre chaque point de score (millisecondes)
 const INACTIF_DELAY = 10; // Secondes d'inactivité avant que le marqueur grandisse
 const MARKER_INIT_LENGTH = 15; // Longueur initiale du marqueur (pixels)
 const MARKER_MAX_LENGTH = 40; // Longueur maximale du marqueur (pixels)
 const MARKER_GROW_SPEED = 3; // Vitesse de croissance du marqueur (pixels/seconde)
+const MARKER_THICKNESS = 8;
+const MARKER_GAP_FROM_PLAYER = 2;
+const MARKER_FOLLOW_STIFFNESS = 120; // Plus élevé = flèche plus puissante
+const MARKER_FOLLOW_DAMPING = 22; // Amortissement fort pour limiter le jitter
+const PLAYER_MAX_SPEED = 8; // Limite la vitesse du joueur tout en laissant un dash plus nerveux
+const ARENA_WIDTH_RATIO = 0.7; // Largeur de l'arène centrale par rapport à l'écran
+const REBORD_HEIGHT_RATIO = 0.1; // Hauteur des rebords = 1/10 de la largeur de l'arène
+const REBORD_THICKNESS = 20;
 
 // --- ÉTAT DU JEU -------------------------------------------------------------
 
@@ -40,6 +48,7 @@ const players = {};
 // Références aux sprites de l'arène (murs, sol, plafond)
 // On les garde en variables pour pouvoir les repositionner si la fenêtre change de taille.
 let ground, wallLeft, wallRight, ceiling, platform;
+let ledgeLeft, ledgeRight;
 
 // Connexion WebSocket (sera initialisée dans setup())
 let ws;
@@ -86,6 +95,9 @@ function connectWebSocket() {
     if (msg.type === 'spawn') {
       // Un nouveau joueur veut rejoindre la partie
       spawnPlayer(msg.pseudo);
+    } else if (msg.type === 'respawn') {
+      // Un joueur mort demande à revenir en jeu
+      respawnPlayer(msg.pseudo);
     } else if (msg.type === 'input1') {
       // Le joueur appuie sur DASH
       dashPlayer(msg.pseudo);
@@ -135,13 +147,36 @@ function spawnPlayer(pseudo) {
   ball.mass = 1; // Masse (affecte la réponse aux forces)
   ball.rotationLock = true; // Empêche la rotation de la balle sur elle-même (visuel plus propre)
 
+  // Flèche physique : un petit "bélier" qui orbite autour du joueur.
+  // Elle est dynamique, donc elle pousse le joueur et les autres par collision.
+  const markerAngle = random(TWO_PI);
+  const markerRadius = PLAYER_RADIUS + MARKER_INIT_LENGTH / 2 + MARKER_GAP_FROM_PLAYER;
+  const marker = new Sprite(
+    ball.x + cos(markerAngle) * markerRadius,
+    ball.y + sin(markerAngle) * markerRadius,
+    MARKER_INIT_LENGTH,
+    MARKER_THICKNESS,
+    'dynamic'
+  );
+  marker.color = col;
+  marker.stroke = color(255);
+  marker.strokeWeight = 1;
+  marker.mass = 2.2;
+  marker.friction = 0.35;
+  marker.bounciness = 0.2;
+  marker.rotation = degrees(markerAngle);
+  marker.rotationLock = true;
+  marker.rotateToDirection = false;
+  marker.visible = false; // corps physique uniquement, la flèche visuelle est dessinée manuellement
+
   // --- Données du joueur -----------------------------------------------------
   // On stocke toutes les données du joueur dans un objet
   const player = {
     pseudo: pseudo,
     sprite: ball,
+    markerSprite: marker,
     color: col,
-    markerAngle: random(TWO_PI), // Direction initiale aléatoire (radians)
+    markerAngle: markerAngle, // Direction initiale aléatoire (radians)
     markerRotationSpeed: MARKER_ROTATION_SPEED, // Vitesse de rotation (peut être négative = sens inverse)
     markerCurrentLength: MARKER_INIT_LENGTH, // Longueur actuelle du marqueur
     score: 0, // Score actuel
@@ -164,10 +199,12 @@ function dashPlayer(pseudo) {
   const p = players[pseudo];
   if (!p) return; // Joueur introuvable, ignorer
 
-  // Calculer le vecteur direction à partir de l'angle du marqueur
-  // cos(angle) = composante X, sin(angle) = composante Y
-  const dx = cos(p.markerAngle);
-  const dy = sin(p.markerAngle);
+  // Le dash part de la direction réelle de la flèche physique.
+  const dxRaw = p.markerSprite.x - p.sprite.x;
+  const dyRaw = p.markerSprite.y - p.sprite.y;
+  const n = Math.hypot(dxRaw, dyRaw) || 1;
+  const dx = dxRaw / n;
+  const dy = dyRaw / n;
 
   // Ajouter une impulsion à la vitesse actuelle
   // sprite.vel = vitesse actuelle du sprite (vecteur {x, y})
@@ -207,9 +244,86 @@ function removePlayer(pseudo) {
   if (!p) return;
 
   // sprite.remove() supprime le sprite du moteur physique et de l'affichage
+  p.markerSprite.remove();
   p.sprite.remove();
   delete players[pseudo];
   console.log('Joueur supprimé :', pseudo);
+}
+
+/**
+ * Met à jour la flèche physique pour qu'elle orbite autour du joueur sans téléportation.
+ * Le mouvement se fait par force afin de conserver les collisions et la poussée.
+ *
+ * @param {object} p - Données du joueur
+ * @param {number} dt - Delta temps en secondes
+ */
+function updateMarkerPhysics(p, dt) {
+  const marker = p.markerSprite;
+
+  // Verrou anti-rotation : le bélier ne doit jamais tourner sur lui-même.
+  marker.rotationSpeed = 0;
+  if (marker.body) {
+    marker.body.setFixedRotation(true);
+    marker.body.setAngularVelocity(0);
+  }
+
+  const orbitRadius = PLAYER_RADIUS + p.markerCurrentLength / 2 + MARKER_GAP_FROM_PLAYER;
+  const targetX = p.sprite.x + cos(p.markerAngle) * orbitRadius;
+  const targetY = p.sprite.y + sin(p.markerAngle) * orbitRadius;
+
+  // Ressort amorti (stable) vers la cible d'orbite.
+  const ax = (targetX - marker.x) * MARKER_FOLLOW_STIFFNESS - marker.vel.x * MARKER_FOLLOW_DAMPING;
+  const ay = (targetY - marker.y) * MARKER_FOLLOW_STIFFNESS - marker.vel.y * MARKER_FOLLOW_DAMPING;
+  marker.vel.x += ax * dt;
+  marker.vel.y += ay * dt;
+
+  // Le collider grandit/rétrécit avec l'inactivité.
+  marker.w = p.markerCurrentLength;
+  marker.h = MARKER_THICKNESS;
+  marker.rotation = degrees(p.markerAngle);
+}
+
+/**
+ * Limite la vitesse max d'un joueur pour éviter les éjections trop violentes.
+ *
+ * @param {object} p - Données du joueur
+ */
+function clampPlayerVelocity(p) {
+  const vx = p.sprite.vel.x;
+  const vy = p.sprite.vel.y;
+  const speed = Math.hypot(vx, vy);
+  if (speed <= PLAYER_MAX_SPEED || speed === 0) return;
+
+  const scale = PLAYER_MAX_SPEED / speed;
+  p.sprite.vel.x *= scale;
+  p.sprite.vel.y *= scale;
+}
+
+/**
+ * Permet à un joueur de revenir en jeu après sa mort.
+ * Si le joueur est déjà vivant, on n'en crée pas un second.
+ *
+ * @param {string} pseudo
+ */
+function respawnPlayer(pseudo) {
+  if (players[pseudo]) return;
+  spawnPlayer(pseudo);
+}
+
+/**
+ * Informe les manettes qu'un joueur vient de mourir.
+ * Le serveur relaie ce message aux autres clients (controllers).
+ *
+ * @param {string} pseudo
+ */
+function notifyPlayerDead(pseudo) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: 'playerDead',
+      pseudo
+    })
+  );
 }
 
 // =============================================================================
@@ -274,11 +388,21 @@ function setup() {
   ground.visible = false; // invisible, on dessine la zone de destruction manuellement
 
   // Plateforme centrale visible
-  platform = new Sprite(width / 2, height - 60, width * 0.7, 20, 'static');
+  const platformWidth = width * ARENA_WIDTH_RATIO;
+  const platformY = height - 60;
+  platform = new Sprite(width / 2, platformY, platformWidth, 20, 'static');
   platform.color = color(80, 80, 80);
   platform.stroke = color(120);
   platform.strokeWeight = 2;
   platform.bounciness = 0.5;
+
+  // Rebord gauche / droit de l'arène (physique)
+  const rebordHeight = platformWidth * REBORD_HEIGHT_RATIO;
+  const platformTopY = platformY - 10;
+  ledgeLeft = new Sprite(width * 0.15, platformTopY - rebordHeight / 2, REBORD_THICKNESS, rebordHeight, 'static');
+  ledgeRight = new Sprite(width * 0.85, platformTopY - rebordHeight / 2, REBORD_THICKNESS, rebordHeight, 'static');
+  ledgeLeft.visible = false;
+  ledgeRight.visible = false;
 
   // Mur gauche
   wallLeft = new Sprite(-10, height / 2, 20, height + 200, 'static');
@@ -325,7 +449,16 @@ function draw() {
   push();
   fill(50);
   noStroke();
-  rect(width * 0.15, height - 70, width * 0.7, 20, 5); // rect avec coins arrondis
+  const arenaWidth = width * ARENA_WIDTH_RATIO;
+  const arenaLeftX = width * 0.15;
+  const arenaRightX = width * 0.85;
+  const platformTopY = height - 70;
+  rect(arenaLeftX, platformTopY, arenaWidth, 20, 5); // rect avec coins arrondis
+
+  // Rebord(s) visibles : hauteur = 1/10 de la largeur de l'arène
+  const rebordHeight = arenaWidth * REBORD_HEIGHT_RATIO;
+  rect(arenaLeftX - REBORD_THICKNESS / 2, platformTopY - rebordHeight, REBORD_THICKNESS, rebordHeight, 4);
+  rect(arenaRightX - REBORD_THICKNESS / 2, platformTopY - rebordHeight, REBORD_THICKNESS, rebordHeight, 4);
   pop();
 
   // --- Décor : zone de destruction (bas de l'écran) ---------------------------
@@ -353,6 +486,7 @@ function draw() {
     // -- Vérification : la balle est-elle tombée dans la zone de destruction ? --
     // height - 25 correspond approximativement au bord de la zone rouge
     if (p.sprite.y > height - 25) {
+      notifyPlayerDead(pseudo);
       removePlayer(pseudo);
       continue; // passer au joueur suivant (le joueur vient d'être supprimé)
     }
@@ -380,6 +514,12 @@ function draw() {
       p.markerCurrentLength = MARKER_INIT_LENGTH;
     }
 
+    // Mise à jour de la flèche physique orbitale
+    updateMarkerPhysics(p, dt);
+
+    // Limiter la vitesse globale du joueur pour réduire l'éjection
+    clampPlayerVelocity(p);
+
     // -- Score -----------------------------------------------------------------
     // On accumule le temps écoulé et on ajoute +1 point toutes les SCORE_TICK_DELAY ms
     p.scoreTimer += deltaTime;
@@ -405,13 +545,12 @@ function draw() {
     //   On multiplie par une distance pour obtenir la position en pixels.
     push();
 
-    // Point de départ de la flèche (sur le bord de la balle + MARKER_DISTANCE)
-    const mx = p.sprite.x + cos(p.markerAngle) * MARKER_DISTANCE;
-    const my = p.sprite.y + sin(p.markerAngle) * MARKER_DISTANCE;
-
-    // Point d'arrivée de la flèche (encore plus loin dans la même direction)
-    const endX = p.sprite.x + cos(p.markerAngle) * (MARKER_DISTANCE + p.markerCurrentLength);
-    const endY = p.sprite.y + sin(p.markerAngle) * (MARKER_DISTANCE + p.markerCurrentLength);
+    const ux = cos(p.markerAngle);
+    const uy = sin(p.markerAngle);
+    const mx = p.markerSprite.x - ux * (p.markerCurrentLength / 2);
+    const my = p.markerSprite.y - uy * (p.markerCurrentLength / 2);
+    const endX = p.markerSprite.x + ux * (p.markerCurrentLength / 2);
+    const endY = p.markerSprite.y + uy * (p.markerCurrentLength / 2);
 
     // Corps de la flèche (ligne)
     stroke(red(p.color), green(p.color), blue(p.color));
@@ -474,5 +613,18 @@ function windowResized() {
   if (platform) {
     platform.x = width / 2;
     platform.y = height - 60;
+    platform.w = width * ARENA_WIDTH_RATIO;
+  }
+  if (ledgeLeft && ledgeRight) {
+    const arenaWidth = width * ARENA_WIDTH_RATIO;
+    const rebordHeight = arenaWidth * REBORD_HEIGHT_RATIO;
+    const platformTopY = height - 70;
+    ledgeLeft.x = width * 0.15;
+    ledgeLeft.y = platformTopY - rebordHeight / 2;
+    ledgeLeft.h = rebordHeight;
+
+    ledgeRight.x = width * 0.85;
+    ledgeRight.y = platformTopY - rebordHeight / 2;
+    ledgeRight.h = rebordHeight;
   }
 }

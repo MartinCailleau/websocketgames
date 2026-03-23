@@ -99,6 +99,15 @@ input[type="text"]:focus {
   padding: 40px;
 }
 
+/* Bouton Respawn (visible uniquement après la mort) */
+.btn-respawn {
+  background: #f39c12;
+  color: #111;
+  box-shadow: 0 4px 15px rgba(243, 156, 18, 0.4);
+  font-size: 1.2em;
+  padding: 16px 26px;
+}
+
 /* Affichage du pseudo actif */
 #player-name {
   font-size: 1.1em;

@@ -8,7 +8,7 @@ Chaque joueur contrôle une balle depuis son téléphone, la balle est simulée 
 ## 📂 Structure du projet
 
 ```
-p5play-cours/
+p5play_brawler_example/
 ├── server.js          ← Serveur Node.js (HTTP + WebSocket)
 ├── package.json       ← Dépendances npm
 ├── lancer-le-serveur.bat  ← Lancement sous Windows

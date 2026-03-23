@@ -17,6 +17,7 @@
 // Variables d'état
 let ws; // Connexion WebSocket
 let pseudo = ''; // Pseudo du joueur courant
+let isDead = false;
 
 // Éléments du DOM
 const loginScreen = document.getElementById('login-screen');
@@ -24,6 +25,16 @@ const controlScreen = document.getElementById('control-screen');
 const statusLogin = document.getElementById('status-login');
 const statusControl = document.getElementById('status-control');
 const pseudoInput = document.getElementById('pseudo-input');
+const dashBtn = document.getElementById('dash-btn');
+const reverseBtn = document.getElementById('reverse-btn');
+const respawnBtn = document.getElementById('respawn-btn');
+
+function setDeadState(dead) {
+  isDead = dead;
+  dashBtn.disabled = dead;
+  reverseBtn.disabled = dead;
+  respawnBtn.style.display = dead ? 'block' : 'none';
+}
 
 // --- CONNEXION WEBSOCKET -------------------------------------------------
 
@@ -50,6 +61,21 @@ function connectWebSocket() {
     statusControl.className = 'status status-disconnected';
     // Reconnexion automatique après 2 secondes
     setTimeout(connectWebSocket, 2000);
+  };
+
+  ws.onmessage = (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (e) {
+      return;
+    }
+
+    // Le jeu envoie cette notification quand une balle tombe.
+    if (msg.type === 'playerDead' && msg.pseudo === pseudo) {
+      setDeadState(true);
+      statusControl.textContent = 'Tu es mort - respawn disponible';
+    }
   };
 
   // Note : on ne reçoit pas de messages sur la manette (on en envoie uniquement).
@@ -91,6 +117,7 @@ document.getElementById('spawn-btn').addEventListener('click', () => {
   // Passer à l'écran de contrôle
   loginScreen.style.display = 'none';
   controlScreen.style.display = 'flex';
+  setDeadState(false);
 
   // Afficher le pseudo actif dans l'écran de contrôle
   document.getElementById('player-name').textContent = '👤 ' + pseudo;
@@ -115,6 +142,15 @@ document.getElementById('dash-btn').addEventListener('click', () => {
 
 document.getElementById('reverse-btn').addEventListener('click', () => {
   send({ type: 'input2', pseudo: pseudo });
+});
+
+// --- BOUTON RESPAWN ------------------------------------------------------
+
+respawnBtn.addEventListener('click', () => {
+  if (!pseudo) return;
+  send({ type: 'respawn', pseudo: pseudo });
+  setDeadState(false);
+  statusControl.textContent = 'Respawn demandé...';
 });
 
 // --- INITIALISATION ------------------------------------------------------
